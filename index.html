@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Acumulador de Tiempo</title>
+    
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏳</text></svg>">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏳</text></svg>">
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <style>
+        :root {
+            --bg-color: #121212;
+            --text-color: #ffffff;
+            --text-secondary: #aaaaaa;
+            --primary-green: #2ecc71;
+            --primary-red: #e74c3c;
+            --disabled-color: #333333;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+            height: 100vh;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            transition: background-color 0.3s ease;
+        }
+
+        body.alerta-cero {
+            background-color: #7f1d1d;
+            animation: parpadeo-alerta 1s infinite alternate;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 450px;
+            padding: 24px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            flex-grow: 1;
+        }
+
+        .status-indicator {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            height: 20px;
+        }
+
+        body.alerta-cero .status-indicator {
+            color: #fca5a5 !important;
+        }
+
+        .marcador {
+            font-size: 4rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            margin-bottom: 40px;
+            letter-spacing: -1px;
+        }
+
+        .btn-container {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 24px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 16px;
+            cursor: pointer;
+            color: white;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-suma { background-color: #27ae60; }
+        .btn-suma.active { background-color: #218c4e; animation: pulse 1.5s infinite; }
+
+        .btn-resta { background-color: #c0392b; }
+        .btn-resta.active { background-color: #962d22; animation: pulse 1.5s infinite; }
+
+        body.alerta-cero .btn-resta.active {
+            background-color: #ef4444;
+            box-shadow: 0 0 20px rgba(255,255,255,0.4);
+        }
+
+        .btn:disabled {
+            background-color: var(--disabled-color);
+            color: #555555;
+            pointer-events: none;
+        }
+
+        .btn-reset {
+            background: none;
+            border: 1px solid #333;
+            color: var(--text-secondary);
+            padding: 10px 24px;
+            font-size: 0.9rem;
+            border-radius: 20px;
+            margin-top: 40px;
+            cursor: pointer;
+        }
+
+        body.alerta-cero .btn-reset {
+            border-color: #b91c1c;
+            color: #fca5a5;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.8; }
+            100% { opacity: 1; }
+        }
+
+        @keyframes parpadeo-alerta {
+            0% { background-color: #581c1c; }
+            100% { background-color: #991b1b; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div id="status" class="status-indicator">En espera</div>
+        <div id="marcador" class="marcador">00:00:00</div>
+
+        <div class="btn-container">
+            <button id="btnSuma" class="btn btn-suma" onclick="toggleSuma()">Iniciar Suma</button>
+            <button id="btnResta" class="btn btn-resta" onclick="toggleResta()">Iniciar Resta</button>
+        </div>
+
+        <button id="btnReset" class="btn-reset" onclick="resetear()">Resetear a cero</button>
+    </div>
+
+    <script>
+        let tiempoTotalMS = 0; 
+        let intervalo = null;
+        let intervaloSonido = null;
+        let estado = 'parado'; // 'parado', 'sumando', 'restando'
+        let tiempoInicioClick = 0;
+        let alarmaActiva = false;
+        let audioCtx = null;
+
+        const marcadorElement = document.getElementById('marcador');
+        const statusElement = document.getElementById('status');
+        const btnSuma = document.getElementById('btnSuma');
+        const btnResta = document.getElementById('btnResta');
+        const btnReset = document.getElementById('btnReset');
+        const bodyElement = document.body;
+
+        function playBeep() {
+            try {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                let oscillator = audioCtx.createOscillator();
+                let gainNode = audioCtx.createGain();
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); 
+                gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime); 
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.start();
+                gainNode.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.15);
+                oscillator.stop(audioCtx.currentTime + 0.15);
+            } catch (e) {
+                console.log("Audio bloqueado.");
+            }
+        }
+
+        function formatearTiempo(ms) {
+            if (ms < 0) ms = 0;
+            let totalSegundos = Math.floor(ms / 1000);
+            let horas = Math.floor(totalSegundos / 3600);
+            let minutos = Math.floor((totalSegundos % 3600) / 60);
+            let segundos = totalSegundos % 60;
+            return `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
+        }
+
+        function toggleSuma() {
+            if (estado === 'parado') {
+                estado = 'sumando';
+                tiempoInicioClick = Date.now();
+                btnSuma.innerText = 'Detener Suma';
+                btnSuma.classList.add('active');
+                btnResta.disabled = true;
+                btnReset.disabled = true;
+                statusElement.innerText = 'Sumando tiempo...';
+                statusElement.style.color = 'var(--primary-green)';
+
+                intervalo = setInterval(() => {
+                    let tiempoTranscurrido = Date.now() - tiempoInicioClick;
+                    marcadorElement.innerText = formatearTiempo(tiempoTotalMS + tiempoTranscurrido);
+                }, 100);
+
+            } else if (estado === 'sumando') {
+                clearInterval(intervalo);
+                let tiempoTranscurrido = Date.now() - tiempoInicioClick;
+                tiempoTotalMS += tiempoTranscurrido;
+                
+                estado = 'parado';
+                btnSuma.innerText = 'Iniciar Suma';
+                btnSuma.classList.remove('active');
+                btnResta.disabled = false;
+                btnReset.disabled = false;
+                statusElement.innerText = 'Tiempo guardado';
+                statusElement.style.color = 'var(--text-secondary)';
+                marcadorElement.innerText = formatearTiempo(tiempoTotalMS);
+            }
+        }
+
+        function toggleResta() {
+            if (estado === 'parado') {
+                if (tiempoTotalMS <= 0) {
+                    statusElement.innerText = 'Marcador vacío';
+                    return;
+                }
+
+                estado = 'restando';
+                tiempoInicioClick = Date.now();
+                btnResta.innerText = 'Detener Resta';
+                btnResta.classList.add('active');
+                btnSuma.disabled = true;
+                btnReset.disabled = true;
+                statusElement.innerText = 'Restando tiempo...';
+                statusElement.style.color = 'var(--primary-red)';
+
+                intervalo = setInterval(() => {
+                    let tiempoTranscurrido = Date.now() - tiempoInicioClick;
+                    let tiempoVisual = tiempoTotalMS - tiempoTranscurrido;
+                    
+                    if (tiempoVisual <= 0) {
+                        tiempoVisual = 0;
+                        if (!alarmaActiva) activarAlarma();
+                    }
+                    marcadorElement.innerText = formatearTiempo(tiempoVisual);
+                }, 100);
+
+            } else if (estado === 'restando') {
+                clearInterval(intervalo);
+                desactivarAlarma();
+
+                let tiempoTranscurrido = Date.now() - tiempoInicioClick;
+                tiempoTotalMS -= tiempoTranscurrido;
+                if (tiempoTotalMS < 0) tiempoTotalMS = 0;
+
+                estado = 'parado';
+                btnResta.innerText = 'Iniciar Resta';
+                btnResta.classList.remove('active');
+                btnSuma.disabled = false;
+                btnReset.disabled = false;
+                statusElement.innerText = 'Tiempo guardado';
+                statusElement.style.color = 'var(--text-secondary)';
+                marcadorElement.innerText = formatearTiempo(tiempoTotalMS);
+            }
+        }
+
+        function activarAlarma() {
+            alarmaActiva = true;
+            bodyElement.classList.add('alerta-cero');
+            statusElement.innerText = '¡TIEMPO AGOTADO!';
+            playBeep();
+            intervaloSonido = setInterval(playBeep, 1000);
+        }
+
+        function desactivarAlarma() {
+            if (alarmaActiva) {
+                alarmaActiva = false;
+                clearInterval(intervaloSonido);
+                bodyElement.classList.remove('alerta-cero');
+            }
+        }
+
+        function resetear() {
+            if (estado === 'parado' && confirm('¿Seguro que quieres resetear el marcador a cero?')) {
+                tiempoTotalMS = 0;
+                marcadorElement.innerText = formatearTiempo(0);
+                statusElement.innerText = 'En espera';
+            }
+        }
+    </script>
+</body>
+</html>
