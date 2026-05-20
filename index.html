@@ -175,6 +175,70 @@
         const btnReset = document.getElementById('btnReset');
         const bodyElement = document.body;
 
+        // --- FUNCIONES DE GUARDADO (LOCALSTORAGE) ---
+        function guardarEstado() {
+            const datos = {
+                tiempoTotalMS: tiempoTotalMS,
+                estado: estado,
+                tiempoInicioClick: tiempoInicioClick,
+                timestampGuardado: Date.now()
+            };
+            localStorage.setItem('crono_datos', JSON.stringify(datos));
+        }
+
+        function cargarEstado() {
+            const datosGuardados = localStorage.getItem('crono_datos');
+            if (!datosGuardados) {
+                marcadorElement.innerText = formatearTiempo(0);
+                return;
+            }
+
+            const datos = JSON.parse(datosGuardados);
+            tiempoTotalMS = datos.tiempoTotalMS;
+            estado = datos.estado;
+            tiempoInicioClick = datos.tiempoInicioClick;
+
+            if (estado === 'sumando') {
+                // Recuperar la interfaz en modo suma
+                btnSuma.innerText = 'Detener Suma';
+                btnSuma.classList.add('active');
+                btnResta.disabled = true;
+                btnReset.disabled = true;
+                statusElement.innerText = 'Sumando tiempo...';
+                statusElement.style.color = 'var(--primary-green)';
+
+                // Calcular el tiempo transcurrido real
+                intervalo = setInterval(() => {
+                    let tiempoTranscurrido = Date.now() - tiempoInicioClick;
+                    marcadorElement.innerText = formatearTiempo(tiempoTotalMS + tiempoTranscurrido);
+                }, 100);
+
+            } else if (estado === 'restando') {
+                // Recuperar la interfaz en modo resta
+                btnResta.innerText = 'Detener Resta';
+                btnResta.classList.add('active');
+                btnSuma.disabled = true;
+                btnReset.disabled = true;
+                statusElement.innerText = 'Restando tiempo...';
+                statusElement.style.color = 'var(--primary-red)';
+
+                intervalo = setInterval(() => {
+                    let tiempoTranscurrido = Date.now() - tiempoInicioClick;
+                    let tiempoVisual = tiempoTotalMS - tiempoTranscurrido;
+                    
+                    if (tiempoVisual <= 0) {
+                        tiempoVisual = 0;
+                        if (!alarmaActiva) activarAlarma();
+                    }
+                    marcadorElement.innerText = formatearTiempo(tiempoVisual);
+                }, 100);
+            } else {
+                // Estado parado
+                statusElement.innerText = 'Tiempo guardado';
+                marcadorElement.innerText = formatearTiempo(tiempoTotalMS);
+            }
+        }
+
         function playBeep() {
             try {
                 if (!audioCtx) {
@@ -199,9 +263,9 @@
             if (ms < 0) ms = 0;
             let totalSegundos = Math.floor(ms / 1000);
             let horas = Math.floor(totalSegundos / 3600);
-            let minutos = Math.floor((totalSegundos % 3600) / 60);
+            let minutes = Math.floor((totalSegundos % 3600) / 60);
             let segundos = totalSegundos % 60;
-            return `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
+            return `${horas.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
         }
 
         function toggleSuma() {
@@ -214,6 +278,8 @@
                 btnReset.disabled = true;
                 statusElement.innerText = 'Sumando tiempo...';
                 statusElement.style.color = 'var(--primary-green)';
+
+                guardarEstado();
 
                 intervalo = setInterval(() => {
                     let tiempoTranscurrido = Date.now() - tiempoInicioClick;
@@ -233,6 +299,8 @@
                 statusElement.innerText = 'Tiempo guardado';
                 statusElement.style.color = 'var(--text-secondary)';
                 marcadorElement.innerText = formatearTiempo(tiempoTotalMS);
+
+                guardarEstado();
             }
         }
 
@@ -251,6 +319,8 @@
                 btnReset.disabled = true;
                 statusElement.innerText = 'Restando tiempo...';
                 statusElement.style.color = 'var(--primary-red)';
+
+                guardarEstado();
 
                 intervalo = setInterval(() => {
                     let tiempoTranscurrido = Date.now() - tiempoInicioClick;
@@ -279,6 +349,8 @@
                 statusElement.innerText = 'Tiempo guardado';
                 statusElement.style.color = 'var(--text-secondary)';
                 marcadorElement.innerText = formatearTiempo(tiempoTotalMS);
+
+                guardarEstado();
             }
         }
 
@@ -303,8 +375,12 @@
                 tiempoTotalMS = 0;
                 marcadorElement.innerText = formatearTiempo(0);
                 statusElement.innerText = 'En espera';
+                localStorage.removeItem('crono_datos'); // Limpia también la memoria externa
             }
         }
+
+        // Ejecutar la carga automática al abrir la aplicación
+        window.onload = cargarEstado;
     </script>
 </body>
 </html>
